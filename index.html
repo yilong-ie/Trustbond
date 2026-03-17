@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TrustBond — Transparent Donations on XRPL</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/xrpl@2.14.0/build/xrpl-latest-min.js"></script>
+<style>
+  :root {
+    --bg:#0a0f0a; --surface:#111811; --card:#161e16; --border:#1f2e1f;
+    --green:#4ade80; --green-dim:#166534; --green-glow:rgba(74,222,128,0.15);
+    --amber:#fbbf24; --blue:#60a5fa; --red:#f87171;
+    --text:#e8f5e8; --muted:#6b8f6b; --mono:'DM Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;}
+  body::before{content:'';position:fixed;inset:0;pointer-events:none;
+    background-image:linear-gradient(rgba(74,222,128,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(74,222,128,0.03) 1px,transparent 1px);
+    background-size:40px 40px;}
+
+  /* ── Header ── */
+  header{padding:20px 48px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);}
+  .logo{font-family:'DM Serif Display',serif;font-size:22px;color:var(--green);}
+  .logo span{color:var(--muted);font-style:italic;}
+  .badge{font-family:var(--mono);font-size:11px;color:var(--green);background:var(--green-glow);border:1px solid var(--green-dim);padding:5px 13px;border-radius:20px;display:flex;align-items:center;gap:6px;}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--red);}
+  .dot.live{background:var(--green);animation:pulse 2s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+  /* ── Layout ── */
+  main{max-width:1160px;margin:0 auto;padding:36px 48px;}
+  .hero{margin-bottom:32px;}
+  .hero h1{font-family:'DM Serif Display',serif;font-size:clamp(28px,4vw,52px);line-height:1.1;letter-spacing:-1px;margin-bottom:10px;}
+  .hero h1 em{color:var(--green);font-style:italic;}
+  .hero p{font-size:15px;color:var(--muted);font-weight:300;max-width:500px;line-height:1.6;}
+
+  /* ── Stats ── */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;}
+  .stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;position:relative;overflow:hidden;transition:border-color .3s;}
+  .stat::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--green),transparent);}
+  .stat:hover{border-color:var(--green-dim);}
+  .stat-label{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;}
+  .stat-value{font-family:'DM Serif Display',serif;font-size:30px;color:var(--green);line-height:1;}
+  .stat-sub{font-size:11px;color:var(--muted);margin-top:3px;}
+
+  /* ── Tabs ── */
+  .tabs{display:flex;gap:4px;margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:4px;width:fit-content;}
+  .tab{font-family:var(--mono);font-size:12px;padding:8px 20px;border-radius:9px;cursor:pointer;color:var(--muted);transition:all .2s;border:none;background:transparent;}
+  .tab.active{background:var(--card);color:var(--green);border:1px solid var(--green-dim);}
+
+  /* ── Grid ── */
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;}
+  .panel-title{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:2px;color:var(--muted);margin-bottom:18px;display:flex;align-items:center;gap:8px;}
+  .panel-title::before{content:'';width:3px;height:13px;background:var(--green);border-radius:2px;}
+
+  /* ── Pathfinding visualizer ── */
+  .pf-wrap{grid-column:1/-1;}
+  .pf-diagram{display:flex;align-items:center;justify-content:center;gap:0;padding:24px;background:var(--surface);border-radius:12px;border:1px solid var(--border);margin-bottom:18px;position:relative;overflow:hidden;}
+  .pf-node{display:flex;flex-direction:column;align-items:center;gap:6px;z-index:1;}
+  .pf-icon{width:52px;height:52px;background:var(--card);border:1px solid var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;transition:all .4s;}
+  .pf-icon.active{border-color:var(--green);box-shadow:0 0 16px var(--green-glow);}
+  .pf-name{font-family:var(--mono);font-size:10px;color:var(--muted);text-transform:uppercase;}
+  .pf-val{font-family:'DM Serif Display',serif;font-size:14px;color:var(--green);min-height:18px;}
+
+  .pf-line{flex:1;height:2px;background:var(--border);position:relative;margin:0 4px;}
+  .pf-line .fill{position:absolute;top:0;left:0;height:100%;background:var(--green);width:0%;transition:width 1s ease;border-radius:2px;}
+  .pf-line .label{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--muted);white-space:nowrap;}
+  .pf-line .sublabel{position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:9px;color:var(--green);white-space:nowrap;opacity:0;transition:opacity .5s;}
+  .pf-line .sublabel.show{opacity:1;}
+
+  .pf-steps{display:flex;flex-direction:column;gap:6px;}
+  .pf-step{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:12px;color:var(--muted);transition:all .3s;}
+  .pf-step.active{border-color:var(--green-dim);color:var(--green);background:var(--green-glow);}
+  .pf-step.done{border-color:var(--green-dim);color:var(--muted);}
+  .pf-step-icon{font-size:14px;width:20px;text-align:center;}
+  .step-num{width:20px;height:20px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0;transition:all .3s;}
+  .pf-step.active .step-num{background:var(--green);color:#0a0f0a;}
+  .pf-step.done .step-num{background:var(--green-dim);color:var(--green);}
+
+  /* ── Donate form ── */
+  .amount-wrap{position:relative;margin-bottom:12px;}
+  .cur-tag{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:13px;color:var(--muted);}
+  input[type=number]{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 50px 12px 16px;font-family:'DM Serif Display',serif;font-size:26px;color:var(--text);outline:none;transition:border-color .2s;-moz-appearance:textfield;}
+  input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+  input[type=number]:focus{border-color:var(--green-dim);box-shadow:0 0 0 3px var(--green-glow);}
+  .presets{display:flex;gap:6px;margin-bottom:16px;}
+  .preset{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px;font-family:var(--mono);font-size:12px;color:var(--muted);cursor:pointer;transition:all .2s;text-align:center;}
+  .preset:hover{border-color:var(--green-dim);color:var(--green);background:var(--green-glow);}
+
+  .mode-toggle{display:flex;gap:6px;margin-bottom:14px;}
+  .mode-btn{flex:1;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--surface);font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;transition:all .2s;text-align:center;}
+  .mode-btn.active{border-color:var(--green-dim);color:var(--green);background:var(--green-glow);}
+
+  .edu-row{background:var(--surface);border:1px solid var(--green-dim);border-radius:10px;padding:11px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .edu-label{font-size:12px;color:var(--muted);}
+  .edu-val{font-family:'DM Serif Display',serif;font-size:20px;color:var(--green);}
+
+  .btn{width:100%;background:var(--green);color:#0a0f0a;border:none;border-radius:10px;padding:13px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:all .2s;}
+  .btn:hover:not(:disabled){background:#86efac;transform:translateY(-1px);box-shadow:0 8px 24px rgba(74,222,128,.25);}
+  .btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+  #statusLog{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--muted);min-height:16px;line-height:1.6;}
+  #statusLog .ok{color:var(--green);}#statusLog .err{color:var(--red);}#statusLog .info{color:var(--blue);}
+
+  /* ── Wallets ── */
+  .wcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px;margin-bottom:10px;}
+  .wrole{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:5px;}
+  .waddr{font-family:var(--mono);font-size:11px;color:var(--text);word-break:break-all;line-height:1.4;}
+  .wbal{margin-top:7px;display:flex;gap:7px;flex-wrap:wrap;}
+  .chip{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:20px;border:1px solid;}
+  .chip-xrp{color:var(--amber);border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.08);}
+  .chip-edu{color:var(--green);border-color:var(--green-dim);background:var(--green-glow);}
+
+  /* ── TX Log ── */
+  .tx-log{grid-column:1/-1;}
+  .tx-list{display:flex;flex-direction:column;gap:8px;}
+  .tx-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:12px;animation:slideIn .4s ease;}
+  @keyframes slideIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+  .tx-icon{width:30px;height:30px;background:var(--green-glow);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;}
+  .tx-desc{font-size:12px;color:var(--text);margin-bottom:3px;}
+  .tx-mode{font-family:var(--mono);font-size:10px;color:var(--blue);margin-bottom:2px;}
+  .tx-hash{font-family:var(--mono);font-size:10px;color:var(--green);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+  .tx-hash:hover{text-decoration:underline;}
+  .tx-xrp{font-family:var(--mono);font-size:12px;color:var(--amber);text-align:right;}
+  .tx-edu{font-family:var(--mono);font-size:12px;color:var(--green);text-align:right;}
+  .empty{text-align:center;padding:24px;color:var(--muted);font-size:12px;font-family:var(--mono);}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Trust<span>bond</span></div>
+  <div class="badge"><div class="dot" id="dot"></div><span id="connText">Connecting...</span></div>
+</header>
+
+<main>
+  <div class="hero">
+    <h1>Donations that are<br><em>transparent by design</em></h1>
+    <p>Every donation recorded on XRPL. Donors receive EDU tokens as on-chain proof. Powered by native XRPL pathfinding for seamless cross-currency conversions.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Total Donated</div><div class="stat-value" id="totalXRP">0</div><div class="stat-sub">XRP raised this session</div></div>
+    <div class="stat"><div class="stat-label">EDU Tokens Issued</div><div class="stat-value" id="totalEDU">0</div><div class="stat-sub">On-chain impact receipts</div></div>
+    <div class="stat"><div class="stat-label">Transactions</div><div class="stat-value" id="totalTx">0</div><div class="stat-sub">All verified on ledger</div></div>
+  </div>
+
+  <div class="grid">
+
+    <!-- Donate Panel -->
+    <div class="panel">
+      <div class="panel-title">Make a Donation</div>
+
+      <div class="mode-toggle">
+        <div class="mode-btn active" id="modePathfind" onclick="setMode('pathfind')">
+          🔀 Pathfinding (XRP → EDU)
+        </div>
+        <div class="mode-btn" id="modeDirect" onclick="setMode('direct')">
+          ⚡ Direct XRP
+        </div>
+      </div>
+
+      <div id="modeDesc" style="font-size:11px;color:var(--blue);font-family:var(--mono);margin-bottom:14px;padding:8px 10px;background:rgba(96,165,250,0.08);border:1px solid rgba(96,165,250,0.2);border-radius:8px;">
+        🔀 XRPL ripple_path_find discovers the optimal route to convert your XRP into EDU in one transaction
+      </div>
+
+      <div class="amount-wrap">
+        <input type="number" id="amountInput" value="5" min="1" max="50">
+        <span class="cur-tag">XRP</span>
+      </div>
+      <div class="presets">
+        <div class="preset" onclick="setAmt(2)">2</div>
+        <div class="preset" onclick="setAmt(5)">5</div>
+        <div class="preset" onclick="setAmt(10)">10</div>
+        <div class="preset" onclick="setAmt(20)">20</div>
+      </div>
+      <div class="edu-row">
+        <span class="edu-label">You will receive</span>
+        <span class="edu-val" id="eduPreview">5 EDU</span>
+      </div>
+      <button class="btn" id="donateBtn" disabled onclick="doDonate()">Connecting to XRPL...</button>
+      <div id="statusLog"></div>
+    </div>
+
+    <!-- Wallet Panel -->
+    <div class="panel">
+      <div class="panel-title">Wallet Status</div>
+      <div class="wcard">
+        <div class="wrole">NGO Issuer</div>
+        <div class="waddr" id="ngoAddr">—</div>
+        <div class="wbal"><span class="chip chip-xrp" id="ngoXRP">— XRP</span></div>
+      </div>
+      <div class="wcard">
+        <div class="wrole">Donor</div>
+        <div class="waddr" id="donorAddr">—</div>
+        <div class="wbal">
+          <span class="chip chip-xrp" id="donorXRP">— XRP</span>
+          <span class="chip chip-edu" id="donorEDU">— EDU</span>
+        </div>
+      </div>
+      <div style="padding:12px;background:var(--surface);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:7px;text-transform:uppercase;letter-spacing:1px">XRPL Primitives Used</div>
+        <div style="font-size:11px;color:var(--muted);line-height:1.9">
+          <span style="color:var(--green)">TrustSet</span> — Donor establishes trustline<br>
+          <span style="color:var(--green)">ripple_path_find</span> — Discover XRP→EDU routes<br>
+          <span style="color:var(--amber)">Payment (cross-currency)</span> — Single atomic tx<br>
+          <span style="color:var(--green)">account_lines</span> — Verify EDU receipt
+        </div>
+      </div>
+    </div>
+
+    <!-- Pathfinding Visualizer -->
+    <div class="panel pf-wrap">
+      <div class="panel-title">Pathfinding Visualizer</div>
+
+      <div class="pf-diagram">
+        <div class="pf-node">
+          <div class="pf-icon" id="pfDonor">👤</div>
+          <div class="pf-name">Donor</div>
+          <div class="pf-val" id="pfDonorVal">—</div>
+        </div>
+        <div class="pf-line" id="pfLine1">
+          <div class="fill" id="pfFill1"></div>
+          <div class="label">SendMax XRP</div>
+          <div class="sublabel" id="pfSub1"></div>
+        </div>
+        <div class="pf-node">
+          <div class="pf-icon" id="pfXRPL">🔀</div>
+          <div class="pf-name">XRPL DEX</div>
+          <div class="pf-val" id="pfXRPLVal">—</div>
+        </div>
+        <div class="pf-line" id="pfLine2">
+          <div class="fill" id="pfFill2"></div>
+          <div class="label">Best Path</div>
+          <div class="sublabel" id="pfSub2"></div>
+        </div>
+        <div class="pf-node">
+          <div class="pf-icon" id="pfNGO">🏛️</div>
+          <div class="pf-name">NGO</div>
+          <div class="pf-val" id="pfNGOVal">—</div>
+        </div>
+        <div class="pf-line" id="pfLine3">
+          <div class="fill" id="pfFill3"></div>
+          <div class="label">EDU Receipt</div>
+          <div class="sublabel" id="pfSub3"></div>
+        </div>
+        <div class="pf-node">
+          <div class="pf-icon" id="pfReceipt">🎓</div>
+          <div class="pf-name">Donor</div>
+          <div class="pf-val" id="pfReceiptVal">—</div>
+        </div>
+      </div>
+
+      <div class="pf-steps">
+        <div class="pf-step" id="step1"><div class="step-num">1</div><div class="pf-step-icon">🔍</div><span>Query ripple_path_find for XRP → EDU routes</span></div>
+        <div class="pf-step" id="step2"><div class="step-num">2</div><div class="pf-step-icon">✅</div><span id="step2txt">Evaluate available paths and select optimal route</span></div>
+        <div class="pf-step" id="step3"><div class="step-num">3</div><div class="pf-step-icon">💸</div><span>Submit cross-currency Payment transaction to XRPL</span></div>
+        <div class="pf-step" id="step4"><div class="step-num">4</div><div class="pf-step-icon">🎓</div><span>NGO issues EDU receipt — donor balance updated on-chain</span></div>
+      </div>
+    </div>
+
+    <!-- TX Log -->
+    <div class="panel tx-log">
+      <div class="panel-title">Live Transaction Log</div>
+      <div class="tx-list" id="txList"><div class="empty">No transactions yet — make your first donation above</div></div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+const NGO_SEED   = "sEdVF4zz7PCNdBYWXSyuVmcLAJJneAQ";
+const DONOR_SEED = "sEdTPpyJFLGMGtXcGFBDijGZtMGX18R";
+const WS_URL     = "wss://s.altnet.rippletest.net:51233";
+
+let client, ngoWallet, donorWallet;
+let totXRP=0, totEDU=0, totTx=0;
+let currentMode = 'pathfind';
+
+// ── UI helpers ──────────────────────────────────────────
+function log(msg, cls='') {
+  document.getElementById('statusLog').innerHTML = `<span class="${cls}">${msg}</span>`;
+}
+function setAmt(v) {
+  document.getElementById('amountInput').value = v;
+  document.getElementById('eduPreview').textContent = v + ' EDU';
+}
+document.getElementById('amountInput').addEventListener('input', function(){
+  document.getElementById('eduPreview').textContent = (this.value||0) + ' EDU';
+});
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('modePathfind').classList.toggle('active', mode==='pathfind');
+  document.getElementById('modeDirect').classList.toggle('active', mode==='direct');
+  document.getElementById('modeDesc').innerHTML = mode==='pathfind'
+    ? '🔀 XRPL ripple_path_find discovers the optimal route to convert your XRP into EDU in one transaction'
+    : '⚡ Direct model: Donor sends XRP to NGO, NGO issues EDU receipt — two transparent transactions';
+}
+
+// ── Pathfinding visualizer ──────────────────────────────
+function pfReset() {
+  ['pfDonor','pfXRPL','pfNGO','pfReceipt'].forEach(id => document.getElementById(id).classList.remove('active'));
+  ['pfFill1','pfFill2','pfFill3'].forEach(id => { document.getElementById(id).style.width='0%'; });
+  ['pfSub1','pfSub2','pfSub3'].forEach(id => { const el=document.getElementById(id); el.textContent=''; el.classList.remove('show'); });
+  ['step1','step2','step3','step4'].forEach(id => { document.getElementById(id).className='pf-step'; });
+  ['pfDonorVal','pfXRPLVal','pfNGOVal','pfReceiptVal'].forEach(id => { document.getElementById(id).textContent='—'; });
+}
+
+async function pfAnimate(steps) {
+  for (const s of steps) {
+    await new Promise(r => setTimeout(r, s.delay || 600));
+    if (s.activeNode) document.getElementById(s.activeNode).classList.add('active');
+    if (s.fillLine) document.getElementById(s.fillLine).style.width = '100%';
+    if (s.subLabel) {
+      const el = document.getElementById(s.subLabel.id);
+      el.textContent = s.subLabel.text;
+      el.classList.add('show');
+    }
+    if (s.step) {
+      const el = document.getElementById(s.step);
+      el.className = 'pf-step active';
+    }
+    if (s.doneStep) document.getElementById(s.doneStep).className = 'pf-step done';
+    if (s.nodeVal) document.getElementById(s.nodeVal.id).textContent = s.nodeVal.text;
+    if (s.step2txt) document.getElementById('step2txt').textContent = s.step2txt;
+  }
+}
+
+// ── XRPL helpers ───────────────────────────────────────
+async function fetchBalances() {
+  try {
+    const ni = await client.request({command:'account_info',account:ngoWallet.address,ledger_index:'validated'});
+    document.getElementById('ngoXRP').textContent = (ni.result.account_data.Balance/1e6).toFixed(1)+' XRP';
+    const di = await client.request({command:'account_info',account:donorWallet.address,ledger_index:'validated'});
+    document.getElementById('donorXRP').textContent = (di.result.account_data.Balance/1e6).toFixed(1)+' XRP';
+    const ln = await client.request({command:'account_lines',account:donorWallet.address});
+    const edu = ln.result.lines.find(l=>l.currency==='EDU');
+    document.getElementById('donorEDU').textContent = (edu ? parseFloat(edu.balance).toFixed(1) : '0')+' EDU';
+  } catch(e){}
+}
+
+async function ensureTrustline() {
+  const ln = await client.request({command:'account_lines',account:donorWallet.address,peer:ngoWallet.address});
+  if (!ln.result.lines.some(l=>l.currency==='EDU')) {
+    log('📋 Creating trustline...', 'info');
+    await client.submitAndWait({
+      TransactionType:'TrustSet', Account:donorWallet.address,
+      LimitAmount:{currency:'EDU',issuer:ngoWallet.address,value:'100000'}
+    },{wallet:donorWallet});
+  }
+}
+
+function addTxRow(amount, mode, hashes) {
+  const list = document.getElementById('txList');
+  const empty = list.querySelector('.empty');
+  if (empty) empty.remove();
+  const base = 'https://testnet.xrpl.org/transactions/';
+  const div = document.createElement('div');
+  div.className = 'tx-item';
+  const hashHtml = hashes.map((h,i) =>
+    `<div class="tx-hash" onclick="window.open('${base}${h}','_blank')">${['XRP','EDU'][i]}: ${h.slice(0,22)}...</div>`
+  ).join('');
+  div.innerHTML = `
+    <div class="tx-icon">${mode==='pathfind'?'🔀':'💸'}</div>
+    <div>
+      <div class="tx-mode">${mode==='pathfind'?'PATHFINDING — cross-currency':'DIRECT — two-step'}</div>
+      <div class="tx-desc">Donation + EDU Receipt</div>
+      ${hashHtml}
+    </div>
+    <div class="tx-xrp">-${amount} XRP</div>
+    <div class="tx-edu">+${amount} EDU</div>
+  `;
+  list.prepend(div);
+}
+
+// ── Main donate flow ───────────────────────────────────
+async function doDonate() {
+  const amount = parseFloat(document.getElementById('amountInput').value);
+  if (!amount||amount<=0){log('❌ Enter a valid amount','err');return;}
+  const btn = document.getElementById('donateBtn');
+  btn.disabled = true;
+
+  pfReset();
+  document.getElementById('pfDonorVal').textContent = amount+' XRP';
+
+  try {
+    log('📋 Checking trustline...', 'info');
+    await ensureTrustline();
+
+    if (currentMode === 'pathfind') {
+      await doPathfindDonate(amount);
+    } else {
+      await doDirectDonate(amount);
+    }
+
+    totXRP+=amount; totEDU+=amount; totTx+=1;
+    document.getElementById('totalXRP').textContent = totXRP;
+    document.getElementById('totalEDU').textContent = totEDU;
+    document.getElementById('totalTx').textContent = totTx;
+    await fetchBalances();
+
+  } catch(err) {
+    log('❌ '+err.message, 'err');
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Donate & Receive EDU Token';
+}
+
+async function doPathfindDonate(amount) {
+  // Step 1: Query paths
+  pfAnimate([{step:'step1', activeNode:'pfDonor', delay:0}]);
+  log('🔍 Querying ripple_path_find...', 'info');
+  document.getElementById('donateBtn').textContent = '🔍 Finding paths...';
+
+  const pathResult = await client.request({
+    command: 'ripple_path_find',
+    source_account: donorWallet.address,
+    source_currencies: [{ currency: 'XRP' }],
+    destination_account: ngoWallet.address,
+    destination_amount: { currency: 'EDU', value: String(amount), issuer: ngoWallet.address }
+  });
+
+  const paths = pathResult.result.alternatives;
+  const hasPath = paths && paths.length > 0;
+
+  // Step 2: Show path result
+  await pfAnimate([{
+    doneStep:'step1', step:'step2', activeNode:'pfXRPL', fillLine:'pfFill1', delay:300,
+    subLabel:{id:'pfSub1', text: amount+' XRP'},
+    step2txt: hasPath
+      ? `✅ Found ${paths.length} path(s) — using optimal route`
+      : '⚠️ No DEX path — falling back to direct issuance',
+    nodeVal:{id:'pfXRPLVal', text: hasPath ? paths.length+' path(s)' : 'No DEX path'}
+  }]);
+
+  let xrpHash, eduHash;
+
+  if (hasPath) {
+    // True cross-currency pathfinding payment
+    log('💱 Submitting cross-currency payment...', 'info');
+    document.getElementById('donateBtn').textContent = '💱 Cross-currency payment...';
+
+    const tx = await client.submitAndWait({
+      TransactionType: 'Payment',
+      Account: donorWallet.address,
+      Destination: ngoWallet.address,
+      SendMax: xrpl.xrpToDrops(amount),
+      Amount: { currency: 'EDU', value: String(amount), issuer: ngoWallet.address },
+      Paths: paths[0].paths_computed
+    }, { wallet: donorWallet });
+
+    xrpHash = tx.result.hash;
+    eduHash  = tx.result.hash;
+
+    await pfAnimate([
+      {doneStep:'step2', step:'step3', activeNode:'pfNGO', fillLine:'pfFill2', delay:0,
+        subLabel:{id:'pfSub2', text:'optimal route'}, nodeVal:{id:'pfNGOVal', text:'received'}},
+      {doneStep:'step3', step:'step4', activeNode:'pfReceipt', fillLine:'pfFill3', delay:800,
+        subLabel:{id:'pfSub3', text:amount+' EDU'}, nodeVal:{id:'pfReceiptVal', text:amount+' EDU'}},
+    ]);
+
+    log('✅ Cross-currency path payment confirmed! Click hashes to verify ↓', 'ok');
+    addTxRow(amount, 'pathfind', [xrpHash]);
+
+  } else {
+    // Fallback: two-step direct
+    log('⚡ No DEX liquidity — using direct model...', 'info');
+    document.getElementById('donateBtn').textContent = '💸 Sending XRP...';
+
+    const xrpTx = await client.submitAndWait({
+      TransactionType:'Payment', Account:donorWallet.address,
+      Destination:ngoWallet.address, Amount:xrpl.xrpToDrops(amount)
+    },{wallet:donorWallet});
+    xrpHash = xrpTx.result.hash;
+
+    await pfAnimate([
+      {doneStep:'step2', step:'step3', activeNode:'pfNGO', fillLine:'pfFill2', delay:0,
+        subLabel:{id:'pfSub2', text:'direct XRP'}, nodeVal:{id:'pfNGOVal', text:amount+' XRP'}},
+    ]);
+
+    document.getElementById('donateBtn').textContent = '🎓 Issuing EDU...';
+    const eduTx = await client.submitAndWait({
+      TransactionType:'Payment', Account:ngoWallet.address,
+      Destination:donorWallet.address,
+      Amount:{currency:'EDU',value:String(amount),issuer:ngoWallet.address}
+    },{wallet:ngoWallet});
+    eduHash = eduTx.result.hash;
+
+    await pfAnimate([
+      {doneStep:'step3', step:'step4', activeNode:'pfReceipt', fillLine:'pfFill3', delay:0,
+        subLabel:{id:'pfSub3', text:amount+' EDU'}, nodeVal:{id:'pfReceiptVal', text:amount+' EDU'}},
+    ]);
+
+    log('✅ Done! (Fallback mode — testnet DEX has no liquidity) Click hashes to verify ↓', 'ok');
+    addTxRow(amount, 'pathfind', [xrpHash, eduHash]);
+  }
+}
+
+async function doDirectDonate(amount) {
+  log('💸 Sending XRP donation...', 'info');
+  document.getElementById('donateBtn').textContent = '💸 Sending XRP...';
+
+  await pfAnimate([{step:'step1', activeNode:'pfDonor', delay:0, nodeVal:{id:'pfDonorVal', text:amount+' XRP'}}]);
+
+  const xrpTx = await client.submitAndWait({
+    TransactionType:'Payment', Account:donorWallet.address,
+    Destination:ngoWallet.address, Amount:xrpl.xrpToDrops(amount)
+  },{wallet:donorWallet});
+
+  await pfAnimate([
+    {doneStep:'step1', step:'step2', activeNode:'pfXRPL', fillLine:'pfFill1', delay:0, subLabel:{id:'pfSub1', text:amount+' XRP'}, nodeVal:{id:'pfXRPLVal', text:'direct'}},
+    {doneStep:'step2', step:'step3', activeNode:'pfNGO', fillLine:'pfFill2', delay:400, subLabel:{id:'pfSub2', text:'XRP received'}, nodeVal:{id:'pfNGOVal', text:amount+' XRP'}},
+  ]);
+
+  log('🎓 Issuing EDU receipt...', 'info');
+  document.getElementById('donateBtn').textContent = '🎓 Issuing EDU...';
+
+  const eduTx = await client.submitAndWait({
+    TransactionType:'Payment', Account:ngoWallet.address,
+    Destination:donorWallet.address,
+    Amount:{currency:'EDU',value:String(amount),issuer:ngoWallet.address}
+  },{wallet:ngoWallet});
+
+  await pfAnimate([
+    {doneStep:'step3', step:'step4', activeNode:'pfReceipt', fillLine:'pfFill3', delay:0, subLabel:{id:'pfSub3', text:amount+' EDU'}, nodeVal:{id:'pfReceiptVal', text:amount+' EDU'}},
+  ]);
+
+  log('✅ Done! Click hashes to verify on-chain ↓', 'ok');
+  addTxRow(amount, 'direct', [xrpTx.result.hash, eduTx.result.hash]);
+}
+
+// ── Init ───────────────────────────────────────────────
+async function init() {
+  try {
+    client = new xrpl.Client(WS_URL);
+    await client.connect();
+    ngoWallet   = xrpl.Wallet.fromSeed(NGO_SEED);
+    donorWallet = xrpl.Wallet.fromSeed(DONOR_SEED);
+    document.getElementById('ngoAddr').textContent   = ngoWallet.address;
+    document.getElementById('donorAddr').textContent = donorWallet.address;
+    document.getElementById('dot').classList.add('live');
+    document.getElementById('connText').textContent  = 'XRPL Testnet Live';
+    await fetchBalances();
+    const btn = document.getElementById('donateBtn');
+    btn.disabled = false;
+    btn.textContent = 'Donate & Receive EDU Token';
+    log('🔗 Connected — ready to donate', 'ok');
+  } catch(e) {
+    document.getElementById('connText').textContent = 'Connection failed';
+    log('❌ Cannot connect: '+e.message, 'err');
+  }
+}
+init();
+</script>
+</body>
+</html>
